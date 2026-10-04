@@ -12,7 +12,7 @@ export function MemberCardDialog({ member, onOpenChange }) {
         <div className="brand-gradient relative h-28">
           <img src="/amal-logo.jpg" alt="" className="absolute right-4 top-4 h-12 w-12 rounded-full opacity-90" />
         </div>
-        <div className="-mt-14 px-6 pb-6">
+       <div className="relative z-10 -mt-14 px-6 pb-6">
           <Avatar src={member.photoUrl} name={member.name} size={104} className="border-4 border-[var(--surface)]" />
           <DialogTitle className="mt-3 text-2xl">{member.name}</DialogTitle>
           <div className="mt-2 flex flex-wrap gap-1.5">
