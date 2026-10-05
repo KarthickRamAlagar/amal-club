@@ -6,6 +6,9 @@ import App from "./App";
 import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import "@/styles/index.css";
+import { recordVisit } from "@/lib/visitor";
+
+recordVisit(); // localStorage: amal.visited = "true", visit count, first/last visit time
 
 function Toasts() { const { theme } = useTheme(); return <Toaster theme={theme} position="top-center" richColors closeButton />; }
 

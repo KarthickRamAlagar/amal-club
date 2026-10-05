@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { PageLoader, EmptyState } from "@/components/common/Primitives";
 import HomePage from "@/pages/public/HomePage";
+import IntroReveal from "@/components/common/IntroReveal";
 
 const AboutPage = lazy(() => import("@/pages/public/AboutPage"));
 const TeamsPage = lazy(() => import("@/pages/public/TeamsPage"));
@@ -41,6 +42,7 @@ function ChatLayout() { return <><SiteHeader /><Outlet /></>; }
 export default function App() {
   return <>
     <ScrollTop />
+    <IntroReveal />
     <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route element={<ChatLayout />}>
