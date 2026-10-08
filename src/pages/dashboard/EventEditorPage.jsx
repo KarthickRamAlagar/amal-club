@@ -46,7 +46,7 @@ export default function EventEditorPage() {
   const closes = f.startAt ? registrationClosesAt(new Date(f.startAt).getTime()) : 0;
 
   return <form onSubmit={save} className="mx-auto max-w-6xl">
-    <DashHeader eyebrow="EVENT REGISTRATION" title={ev ? `Edit ${ev.name}` : "Create an upcoming event."} subtitle="Everything here feeds the event page, the poster studio and the registration form." action={<Link to="/dashboard/events" className="text-sm font-semibold text-muted">← Events</Link>} />
+    <DashHeader eyebrow="EVENT REGISTRATION" title={ev ? `Edit ${ev.name}` : "Create an upcoming event."} subtitle="Everything here feeds the event page, the media studio and the registration form." action={<Link to="/dashboard/events" className="text-sm font-semibold text-muted">← Events</Link>} />
     <div className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
       <div className="space-y-5">
         <Card><CardHeader><CardTitle>Basics</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2">
@@ -58,7 +58,7 @@ export default function EventEditorPage() {
           <Field label="Location / venue" required className="sm:col-span-2"><Input value={f.location} onChange={s("location")} required placeholder="Amriteshwari Hall" /></Field>
           {closes > 0 && <p className="rounded-lg bg-surface-2 p-3 text-[12px] text-muted sm:col-span-2">Online registration will open now and close at <strong className="text-fg">{fmtDateTime(closes)}</strong> (11:50 PM the night before). After that the page shows the on-spot registration card.</p>}
         </CardContent></Card>
-        <Card><CardHeader><div><CardTitle>Rules &amp; regulations</CardTitle><CardDescription>One rule per line — prefilled into posters.</CardDescription></div></CardHeader><CardContent>
+        <Card><CardHeader><div><CardTitle>Rules &amp; regulations</CardTitle><CardDescription>One rule per line — prefilled into the event report.</CardDescription></div></CardHeader><CardContent>
           <Textarea value={f.rules} onChange={s("rules")} rows={6} placeholder={"Teams of 2–4\nFormal attire is mandatory\nBills must be submitted by 9 AM"} />
         </CardContent></Card>
         <Card><CardHeader><div><CardTitle>Sponsors</CardTitle><CardDescription>Logo from upload or Unsplash.</CardDescription></div><Button type="button" size="sm" variant="secondary" onClick={() => setF({ ...f, sponsors: [...f.sponsors, { name: "", logoUrl: "" }] })}><Plus /> Add sponsor</Button></CardHeader>

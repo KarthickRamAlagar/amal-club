@@ -20,12 +20,12 @@ import { SITE_URL, LIMITS } from "@/lib/constants";
 import { db } from "@/lib/firebase";
 import { errMsg, timeAgo, countdown } from "@/lib/utils";
 
-const SCOPE_LABEL = { form: "Form creation", poster: "Poster creation" };
+const SCOPE_LABEL = { form: "Form creation" };
 
-/** Approver inbox: Admin / Club Representatives / Technical Lead (forms) / Media Lead (posters). */
+/** Approver inbox: Admin / Club Representatives / Technical Lead (form creation). */
 export default function ApprovalsPage() {
   const { member: me } = useAuth();
-  const scopes = ["form", "poster"].filter((s) => approverType(me, s));
+  const scopes = ["form"].filter((s) => approverType(me, s));
   const { data: rows, loading } = useQueryData(() => (scopes.length ? query(collection(db, "requests"), where("scope", "in", scopes), orderBy("createdAt", "desc"), limit(200)) : null), [scopes.join()]);
   const [denyFor, setDenyFor] = useState(null); const [reason, setReason] = useState(""); const [issued, setIssued] = useState(null); const [busy, setBusy] = useState("");
   const [page, setPage] = useState(1);

@@ -6,6 +6,7 @@ import {
 import { doc } from "firebase/firestore";
 import { Eyebrow, ImageCard, PageLoader, EmptyState } from "@/components/common/Primitives";
 import { PredictionCards } from "@/components/events/PredictionCards";
+import { EventMediaSection } from "@/components/events/EventMediaSection";
 import { Badge } from "@/components/ui/badge";
 import { useEvent } from "@/hooks/useData";
 import { useDocData, useNow } from "@/hooks/useFirestore";
@@ -103,6 +104,7 @@ export default function EventDetailPage() {
       </div>
     </section>
 
+    <EventMediaSection ev={ev} />
     {staff && phase !== "past" && <section className="section section-tint"><PredictionCards event={ev} canRun={staff} /></section>}
   </>;
 }

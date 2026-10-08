@@ -1,12 +1,12 @@
 import { NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, UserPlus, CalendarDays, Table2, FileText, Image as ImageIcon, ShieldCheck, ScrollText,
+  LayoutDashboard, UserPlus, CalendarDays, Table2, FileText, Clapperboard, NotebookPen, ShieldCheck, ScrollText,
   UserCog, RefreshCcw, LogOut, Lock,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Avatar } from "@/components/ui/avatar";
 import { PageLoader } from "@/components/common/Primitives";
-import { approverType, canInvite, canReviewTeam, canCreateEvent, canSeeFormLogs, canSeePosterLogs, isAdmin, isOB } from "@/lib/permissions";
+import { approverType, canInvite, canReviewTeam, canCreateEvent, canSeeFormLogs, canSeeMediaLogs, canUseDocs, isAdmin, isOB } from "@/lib/permissions";
 import { roleLabel, teamName } from "@/lib/constants";
 import { firebaseReady } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
@@ -17,11 +17,12 @@ function items(m) {
     { to: "/dashboard/events", icon: CalendarDays, label: canCreateEvent(m) ? "Events" : "Events", show: true },
     { to: "/dashboard/registrations", icon: Table2, label: "Registrations" },
     { to: "/dashboard/forms", icon: FileText, label: "Form creation" },
-    { to: "/dashboard/posters", icon: ImageIcon, label: "Poster studio" },
-    { to: "/dashboard/approvals", icon: ShieldCheck, label: "Approvals", show: !!(approverType(m, "form") || approverType(m, "poster")) },
+    { to: "/dashboard/media", icon: Clapperboard, label: "Media studio" },
+    { to: "/dashboard/documentation", icon: NotebookPen, label: "Documentation", show: canUseDocs(m) },
+    { to: "/dashboard/approvals", icon: ShieldCheck, label: "Approvals", show: !!approverType(m, "form") },
     { to: "/dashboard/members", icon: UserPlus, label: "Members & invites", show: canInvite(m) },
     { to: "/dashboard/year-review", icon: RefreshCcw, label: "Retain / Release", show: canReviewTeam(m, "technical") },
-    { to: "/dashboard/logs", icon: ScrollText, label: "Activity logs", show: isAdmin(m) || isOB(m) || canSeeFormLogs(m) || canSeePosterLogs(m) || m?.role === "lead" },
+    { to: "/dashboard/logs", icon: ScrollText, label: "Activity logs", show: isAdmin(m) || isOB(m) || canSeeFormLogs(m) || canSeeMediaLogs(m) || m?.role === "lead" },
     { to: "/dashboard/profile", icon: UserCog, label: "My profile" },
   ].filter((i) => i.show !== false);
 }

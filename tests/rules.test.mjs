@@ -13,7 +13,7 @@ const member = (uid, role, team = null) => ({ uid, name: uid, email: `${uid}@x.c
 
 await env.withSecurityRulesDisabled(async (c) => {
   const db = c.firestore();
-  for (const [u, r, tm] of [["pres", "president"], ["vp1", "vp"], ["ttl", "lead", "technical"], ["mtl", "lead", "media"], ["mem", "member", "outreach"], ["media1", "member", "media"]]) await setDoc(doc(db, "members", u), member(u, r, tm));
+  for (const [u, r, tm] of [["pres", "president"], ["vp1", "vp"], ["ttl", "lead", "technical"], ["mtl", "lead", "media"], ["mem", "member", "outreach"], ["media1", "member", "media"], ["docs1", "member", "documentation"], ["docl", "lead", "documentation"]]) await setDoc(doc(db, "members", u), member(u, r, tm));
   await setDoc(doc(db, "members", "newbie"), { ...member("newbie", "member", "outreach"), onboarded: false });
   const ev = (slug, start, extra = {}) => setDoc(doc(db, "events", slug), { slug, name: slug, status: "upcoming", startAt: start, price: 200, teamMin: 2, teamMax: 4, onlineIntake: 2, onspotIntake: 1, onlineCount: 0, onspotCount: 0, createdBy: snap("pres", "president"), ...extra });
   await ev("future", now + 5 * DAY); await ev("tomorrow-closed", now + 30 * 60000 + 0); await ev("full", now + 5 * DAY, { onlineCount: 2 });
@@ -22,6 +22,11 @@ await env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(db, "requests", "rq2"), { id: "rq2", scope: "poster", status: "pending", requester: snap("mem", "member", "outreach"), approvals: [] });
   await setDoc(doc(db, "registrations", "future_other"), { id: "future_other", eventId: "future", uid: "other", status: "pending_payment", mode: "online" });
   await setDoc(doc(db, "logs", "lf"), { scope: "forms", type: "form.create", actor: snap("ttl", "lead", "technical") });
+  await setDoc(doc(db, "logs", "lm"), { scope: "media", type: "media.save", target: { id: "future" }, actor: snap("media1", "member", "media") });
+  await setDoc(doc(db, "logs", "le"), { scope: "events", type: "event.update", target: { id: "future" }, actor: snap("pres", "president") });
+  await setDoc(doc(db, "logs", "lmem"), { scope: "members", type: "invite.create", target: { id: "x" }, actor: snap("pres", "president") });
+  await setDoc(doc(db, "events/future/messages", "msg1"), { type: "text", text: "hi", sender: { uid: "pres" } });
+  await setDoc(doc(db, "canvaTokens", "media1"), { access: "sealed", refresh: "sealed" });
 });
 
 console.log("Setup / first admin");
@@ -101,14 +106,53 @@ await no("member code for someone else blocked", form("ttl", "code", { code: "TT
 const useCode = () => form("mem", "code", { code: "TTL-AMAL-1234", requestId: "rq1" }, (b, db, r) => { b.update(doc(db, "grantCodes", "TTL-AMAL-1234"), { used: true, usedBy: "mem", usedAt: serverTimestamp(), formId: r.id }); b.update(doc(db, "requests", "rq1"), { status: "used", usedAt: serverTimestamp(), formId: r.id }); });
 await ok("member creates with valid one-time code", useCode());
 await no("code cannot be reused", useCode());
-await no("TTL cannot approve poster request", updateDoc(doc(ctx("ttl"), "requests", "rq2"), { status: "allowed", decidedBy: snap("ttl", "lead") }));
-await ok("media lead approves poster request", updateDoc(doc(ctx("mtl"), "requests", "rq2"), { status: "allowed", decidedBy: snap("mtl", "lead", "media"), decidedAt: serverTimestamp() }));
+await no("TTL cannot approve old poster request", updateDoc(doc(ctx("ttl"), "requests", "rq2"), { status: "allowed", decidedBy: snap("ttl", "lead") }));
+await no("media lead can no longer approve poster requests", updateDoc(doc(ctx("mtl"), "requests", "rq2"), { status: "allowed", decidedBy: snap("mtl", "lead", "media"), decidedAt: serverTimestamp() }));
+await no("poster permission requests are gone", setDoc(doc(ctx("mem"), "requests", "rqp"), { id: "rqp", scope: "poster", status: "pending", requester: snap("mem", "member", "outreach") }));
 await no("TTL cannot mint an ADMIN code", setDoc(doc(ctx("ttl"), "grantCodes", "ADMIN-AMAL-9999"), { code: "ADMIN-AMAL-9999", scope: "form", requesterUid: "mem", requestId: "rq9", used: false, revoked: false, expiresAt: now + 3600000, issuedBy: snap("ttl", "lead") }));
 await ok("TTL mints TTL code", setDoc(doc(ctx("ttl"), "grantCodes", "TTL-AMAL-4321"), { code: "TTL-AMAL-4321", scope: "form", requesterUid: "mem", requestId: "rq9", used: false, revoked: false, expiresAt: now + 3600000, issuedBy: snap("ttl", "lead") }));
 
-console.log("Posters, logs, onboarding gate");
-await ok("media member saves poster", addDoc(collection(ctx("media1"), "posters"), { eventId: "future", createdBy: snap("media1", "member", "media"), createdAt: serverTimestamp(), grant: null }));
-await no("non-media member without code blocked", addDoc(collection(ctx("mem"), "posters"), { eventId: "future", createdBy: snap("mem", "member"), createdAt: serverTimestamp(), grant: null }));
+console.log("Event media (Canva / Video Studio / uploads)");
+const mediaDoc = (id, by, role, team, extra = {}) => ({ id, eventId: "future", eventName: "future", kind: "poster", source: "canva", format: "png", title: "Poster", url: "https://res.cloudinary.com/demo/image/upload/v1/a.png", thumbUrl: "", visibility: "public", status: "active", canva: { designId: "DAF1" }, createdBy: snap(by, role, team), createdAt: serverTimestamp(), ...extra });
+await ok("media member saves a poster to an event", setDoc(doc(ctx("media1"), "media", "m1"), mediaDoc("m1", "media1", "member", "media")));
+await ok("any team lead saves a video", setDoc(doc(ctx("ttl"), "media", "m2"), mediaDoc("m2", "ttl", "lead", "technical", { kind: "video", source: "studio", visibility: "internal", url: "https://res.cloudinary.com/demo/video/upload/v1/a.mp4" })));
+await no("outreach member cannot save media", setDoc(doc(ctx("mem"), "media", "m3"), mediaDoc("m3", "mem", "member", "outreach")));
+await no("non-Cloudinary URL rejected", setDoc(doc(ctx("media1"), "media", "m4"), mediaDoc("m4", "media1", "member", "media", { url: "https://evil.example/x.png" })));
+await no("unknown event rejected", setDoc(doc(ctx("media1"), "media", "m5"), mediaDoc("m5", "media1", "member", "media", { eventId: "nope" })));
+await no("cannot save as someone else", setDoc(doc(ctx("media1"), "media", "m6"), mediaDoc("m6", "ttl", "lead", "technical")));
+await ok("public reads public media", getDoc(doc(env.unauthenticatedContext().firestore(), "media", "m1")));
+await no("public cannot read team-only media", getDoc(doc(env.unauthenticatedContext().firestore(), "media", "m2")));
+await ok("public lists public media for an event", getDocs(query(collection(env.unauthenticatedContext().firestore(), "media"), where("eventId", "==", "future"), where("visibility", "==", "public"), where("status", "==", "active"))));
+await ok("members read team-only media", getDoc(doc(ctx("docs1"), "media", "m2")));
+await ok("creator hides their poster", updateDoc(doc(ctx("media1"), "media", "m1"), { visibility: "internal", updatedBy: snap("media1", "member", "media"), updatedAt: serverTimestamp() }));
+await no("another member cannot hide it", updateDoc(doc(ctx("docs1"), "media", "m1"), { visibility: "public" }));
+await ok("a lead can remove media", updateDoc(doc(ctx("docl"), "media", "m1"), { status: "removed", updatedAt: serverTimestamp() }));
+await no("URL can never be changed", updateDoc(doc(ctx("media1"), "media", "m1"), { url: "https://res.cloudinary.com/demo/image/upload/b.png" }));
+
+console.log("Documentation: reports, diary, logs");
+const rep = (by, role, team, extra = {}) => ({ eventId: "future", eventName: "future", html: "<h1>Report</h1>", words: 1, createdBy: snap(by, role, team), updatedBy: snap(by, role, team), updatedAt: serverTimestamp(), ...extra });
+await ok("documentation member writes the report", setDoc(doc(ctx("docs1"), "reports", "future"), rep("docs1", "member", "documentation")));
+await ok("president edits the report", setDoc(doc(ctx("pres"), "reports", "future"), rep("pres", "president")));
+await no("outreach member cannot write reports", setDoc(doc(ctx("mem"), "reports", "future"), rep("mem", "member", "outreach")));
+await no("report id must match its event", setDoc(doc(ctx("docs1"), "reports", "full"), rep("docs1", "member", "documentation")));
+await no("report needs an existing event", setDoc(doc(ctx("docs1"), "reports", "ghost"), rep("docs1", "member", "documentation", { eventId: "ghost" })));
+await ok("any member reads reports", getDoc(doc(ctx("ttl"), "reports", "future")));
+await no("public cannot read reports", getDoc(doc(env.unauthenticatedContext().firestore(), "reports", "future")));
+const note = (by, role, team, extra = {}) => ({ day: 20000, text: "Chief guest arrived at 10", ai: false, author: snap(by, role, team), createdAt: serverTimestamp(), ...extra });
+await ok("documentation member adds a diary note", setDoc(doc(ctx("docs1"), "events/future/diary", "n1"), note("docs1", "member", "documentation")));
+await no("outreach member cannot add diary notes", setDoc(doc(ctx("mem"), "events/future/diary", "n2"), note("mem", "member", "outreach")));
+await no("diary note over 4000 chars rejected", setDoc(doc(ctx("docs1"), "events/future/diary", "n3"), note("docs1", "member", "documentation", { text: "x".repeat(4001) })));
+await no("another docs member cannot delete my note", (async () => { const d = ctx("docl"); const b = writeBatch(d); b.delete(doc(d, "events/future/diary", "n1")); return b.commit(); })());
+await ok("author deletes own note", (async () => { const d = ctx("docs1"); const b = writeBatch(d); b.delete(doc(d, "events/future/diary", "n1")); return b.commit(); })());
+await ok("docs member reads media logs", getDoc(doc(ctx("docs1"), "logs", "lm")));
+await ok("docs member reads event logs", getDoc(doc(ctx("docs1"), "logs", "le")));
+await no("docs member cannot read member/invite logs", getDoc(doc(ctx("docs1"), "logs", "lmem")));
+await no("outreach member cannot read media logs", getDoc(doc(ctx("mem"), "logs", "lm")));
+await ok("docs member reads the event chat (for the diary)", getDoc(doc(ctx("docs1"), "events/future/messages", "msg1")));
+await no("Canva tokens are server-only, even for their owner", getDoc(doc(ctx("media1"), "canvaTokens", "media1")));
+await no("Canva OAuth states are server-only", getDoc(doc(ctx("media1"), "canvaStates", "abc")));
+
+console.log("Logs, onboarding gate");
 await ok("TTL reads form logs", getDoc(doc(ctx("ttl"), "logs", "lf")));
 await no("member cannot read form logs", getDoc(doc(ctx("mem"), "logs", "lf")));
 await no("non-onboarded member cannot request permission", setDoc(doc(ctx("newbie"), "requests", "rqn"), { id: "rqn", scope: "form", status: "pending", requester: snap("newbie", "member") }));

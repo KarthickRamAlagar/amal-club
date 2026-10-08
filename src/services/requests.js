@@ -7,7 +7,7 @@ import { LIMITS } from "@/lib/constants";
 import { randomDigits } from "@/lib/utils";
 import { logInBatch } from "./logs";
 
-const scopeLog = (scope) => (scope === "poster" ? "posters" : "forms");
+const scopeLog = () => "forms";
 
 export async function createRequest(me, { scope, reason, event }) {
   const batch = writeBatch(db);

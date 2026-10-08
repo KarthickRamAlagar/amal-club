@@ -55,7 +55,7 @@ export const teamName = (id) => teamById(id)?.name ?? (id ? id : "Core");
 export const YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year", "PG / M.Tech", "Research", "Faculty"];
 export const DEPARTMENTS = ["CSE", "AIE", "AID", "ECE", "EEE", "ME", "CCE", "RAI", "MBA", "MCA", "BBA", "B.Com", "M.Tech", "Other"];
 
-// ─── Permission scopes (form creation / poster creation) ─────────────
+// ─── Permission scopes (form creation) ─────────────
 // approver roles + code prefix per approver type
 export const CODE_FORMATS = {
   admin: { prefix: "ADMIN-AMAL-", digits: 4 },

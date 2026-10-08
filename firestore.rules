@@ -19,9 +19,11 @@ service cloud.firestore {
     function isOB() { return ready() && me().role in ['president', 'vp', 'treasurer']; }
     function isStaff() { return ready() && myRank() >= 40; }
     function isTTL() { return ready() && me().role == 'lead' && me().team == 'technical'; }
-    function isMTL() { return ready() && me().role == 'lead' && me().team == 'media'; }
     function isMedia() { return ready() && me().team == 'media'; }
-    function canApprove(scope) { return isAdmin() || isOB() || (scope == 'form' && isTTL()) || (scope == 'poster' && isMTL()); }
+    function isDocs() { return ready() && me().team == 'documentation'; }
+    function canMedia() { return isAdmin() || isOB() || (ready() && me().role == 'lead') || isMedia(); }
+    function canDocs() { return isAdmin() || isOB() || isDocs(); }
+    function canApprove(scope) { return scope == 'form' && (isAdmin() || isOB() || isTTL()); }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
     function nowMs() { return request.time.toMillis(); }
     function istDay() { return math.floor((nowMs() + 19800000) / 86400000); }
@@ -124,7 +126,9 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.actor.uid == uid() && request.resource.data.createdAt == request.time;
       allow read: if (resource.data.scope in ['members', 'events', 'registrations'] && isStaff())
         || (resource.data.scope == 'forms' && (isAdmin() || isOB() || isTTL()))
-        || (resource.data.scope == 'posters' && (isAdmin() || isOB() || isMedia()));
+        || (resource.data.scope in ['media', 'posters'] && (isAdmin() || isOB() || isMedia() || isDocs()))
+        // Documentation team sees the event history it writes reports about
+        || (resource.data.scope in ['events', 'registrations', 'forms', 'media'] && isDocs());
       allow update, delete: if false;
     }
 
@@ -171,7 +175,7 @@ service cloud.firestore {
       match /messages/{mid} {
         function myReg() { return get(regPath(slug)).data; }
         function activeReg() { return exists(regPath(slug)) && myReg().status in ['pending_payment', 'confirmed']; }
-        allow read: if isStaff() || (signedIn() && exists(regPath(slug)));
+        allow read: if isStaff() || isDocs() || (signedIn() && exists(regPath(slug)));
         allow create: if signedIn()
           && request.resource.data.sender.uid == uid()
           && request.resource.data.createdAt == request.time
@@ -181,6 +185,18 @@ service cloud.firestore {
               && (request.resource.data.type == 'text' || request.resource.data.regId == slug + '_' + uid()))
           );
         allow update, delete: if false;
+      }
+
+      // Documentation diary: one note per person per entry, day = IST day number
+      match /diary/{nid} {
+        allow read: if ready();
+        allow create: if canDocs()
+          && request.resource.data.author.uid == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.day is number
+          && request.resource.data.text is string && request.resource.data.text.size() <= 4000;
+        allow delete: if canDocs() && (resource.data.author.uid == uid() || isAdmin() || isOB());
+        allow update: if false;
       }
     }
 
@@ -223,7 +239,7 @@ service cloud.firestore {
       allow read: if (signedIn() && resource.data.requester.uid == uid()) || canApprove(resource.data.scope);
       allow create: if ready() && request.resource.data.id == id
         && request.resource.data.requester.uid == uid()
-        && request.resource.data.scope in ['form', 'poster']
+        && request.resource.data.scope == 'form'
         && request.resource.data.status == 'pending';
       allow update: if
         (canApprove(resource.data.scope) && resource.data.status in ['pending', 'allowed']
@@ -231,13 +247,13 @@ service cloud.firestore {
           && request.resource.data.status in ['allowed', 'denied']
           && (!changed().hasAny(['decidedBy']) || request.resource.data.decidedBy.uid == uid()))
         || (signedIn() && resource.data.requester.uid == uid() && resource.data.status == 'allowed'
-          && changed().hasOnly(['status', 'usedAt', 'formId', 'posterId']) && request.resource.data.status == 'used');
+          && changed().hasOnly(['status', 'usedAt', 'formId']) && request.resource.data.status == 'used');
       allow delete: if false;
     }
 
     match /grantCodes/{code} {
       allow get: if signedIn();
-      allow list: if isAdmin() || isOB() || isTTL() || isMTL();
+      allow list: if isAdmin() || isOB() || isTTL();
       allow create: if canApprove(request.resource.data.scope)
         && request.resource.data.code == code
         && request.resource.data.issuedBy.uid == uid()
@@ -245,13 +261,12 @@ service cloud.firestore {
         && request.resource.data.expiresAt <= nowMs() + 86400000 + 120000
         && (isAdmin() ? code.matches('^ADMIN-AMAL-[0-9]{4}$')
           : isOB() ? code.matches('^OB-AMAL-[0-9]{6}$')
-          : request.resource.data.scope == 'form' ? code.matches('^TTL-AMAL-[0-9]{4}$')
-          : code.matches('^MTL-AMAL-[0-9]{4}$'));
+          : code.matches('^TTL-AMAL-[0-9]{4}$'));
       allow update: if
         (canApprove(resource.data.scope) && changed().hasOnly(['revoked']) && request.resource.data.revoked == true)
         || (signedIn() && resource.data.requesterUid == uid() && resource.data.used == false && resource.data.revoked == false
           && resource.data.expiresAt > nowMs()
-          && changed().hasOnly(['used', 'usedBy', 'usedAt', 'formId', 'posterId'])
+          && changed().hasOnly(['used', 'usedBy', 'usedAt', 'formId'])
           && request.resource.data.used == true && request.resource.data.usedBy == uid());
       allow delete: if false;
     }
@@ -298,16 +313,41 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ───────── posters ─────────
-    match /posters/{pid} {
-      allow read: if ready();
-      allow create: if ready()
+    // ───────── event media (Canva posters & videos, Video Studio, uploads) ─────────
+    // Only the Cloudinary URL + metadata live here; the editable design stays in the member's Canva.
+    match /media/{mid} {
+      allow read: if (resource.data.visibility == 'public' && resource.data.status == 'active') || ready();
+      allow create: if canMedia()
+        && request.resource.data.id == mid
         && request.resource.data.createdBy.uid == uid()
         && request.resource.data.createdAt == request.time
-        && (isAdmin() || isOB() || isMedia()
-          || (request.resource.data.grant != null && grantOk(request.resource.data.grant.code, 'poster')));
-      allow update, delete: if false;
+        && request.resource.data.status == 'active'
+        && request.resource.data.kind in ['poster', 'video']
+        && request.resource.data.source in ['canva', 'studio', 'upload']
+        && request.resource.data.visibility in ['public', 'internal']
+        && request.resource.data.url is string && request.resource.data.url.matches('^https://res[.]cloudinary[.]com/.*')
+        && exists(doc_('events/' + request.resource.data.eventId));
+      allow update: if (canMedia() && (resource.data.createdBy.uid == uid() || isAdmin() || isOB() || (ready() && me().role == 'lead')))
+        && changed().hasOnly(['visibility', 'status', 'title', 'updatedBy', 'updatedAt'])
+        && request.resource.data.visibility in ['public', 'internal'] && request.resource.data.status in ['active', 'removed'];
+      allow delete: if false;
     }
+
+    // ───────── event reports (Documentation team) ─────────
+    match /reports/{slug} {
+      allow read: if ready();
+      allow create, update: if canDocs()
+        && request.resource.data.eventId == slug
+        && exists(doc_('events/' + slug))
+        && request.resource.data.updatedBy.uid == uid()
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.html is string && request.resource.data.html.size() < 900000;
+      allow delete: if isAdmin();
+    }
+
+    // Canva OAuth state + tokens: written and read only by the Vercel API (Admin SDK)
+    match /canvaStates/{id} { allow read, write: if false; }
+    match /canvaTokens/{u} { allow read, write: if false; }
 
     // server-only (AI quotas are written by the Vercel API with the Admin SDK)
     match /aiQuota/{u} {

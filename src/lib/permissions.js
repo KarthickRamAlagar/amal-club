@@ -44,7 +44,6 @@ export function approverType(m, scope) {
   if (isAdmin(m)) return "admin";
   if (isOB(m)) return "ob";
   if (scope === "form" && isTTL(m)) return "ttl";
-  if (scope === "poster" && isMTL(m)) return "mtl";
   return null;
 }
 export const approverRank = (type) => APPROVER_RANK[type] ?? 0;
@@ -57,12 +56,11 @@ export function formCreationMode(m) {
   if (isOB(m) || isTTL(m)) return "quota";
   return "code";
 }
-/** Poster creation: Admin, OB, Media & Design team directly; others need a code. */
-export function posterCreationMode(m) {
-  if (!isReady(m)) return "blocked";
-  if (isAdmin(m) || isOB(m) || isMediaTeam(m)) return "direct";
-  return "code";
-}
+/** Media (Canva posters / videos / Video Studio): Admin, Club Reps, every Team Lead and the Media & Design team. */
+export const canCreateMedia = (m) => isReady(m) && (isAdmin(m) || isOB(m) || isLead(m) || m?.team === "media");
+/** Documentation workspace: Admin, Club Reps and the Documentation & Report team. */
+export const isDocsTeam = (m) => isReady(m) && m?.team === "documentation";
+export const canUseDocs = (m) => isReady(m) && (isAdmin(m) || isOB(m) || isDocsTeam(m));
 
 export const canSeeFormLogs = (m) => isReady(m) && (isAdmin(m) || isOB(m) || isTTL(m));
-export const canSeePosterLogs = (m) => isReady(m) && (isAdmin(m) || isOB(m) || isMediaTeam(m));
+export const canSeeMediaLogs = (m) => isReady(m) && (isAdmin(m) || isOB(m) || isMediaTeam(m) || isDocsTeam(m));

@@ -17,8 +17,7 @@ export default function OverviewPage() {
   const { member } = useAuth();
   const { data: events } = useEvents();
   const { data: members } = useActiveMembers();
-  const canApproveForm = approverType(member, "form"); const canApprovePoster = approverType(member, "poster");
-  const scopes = [canApproveForm && "form", canApprovePoster && "poster"].filter(Boolean);
+  const scopes = approverType(member, "form") ? ["form"] : [];
   const { data: pending } = useQueryData(() => (scopes.length ? query(collection(db, "requests"), where("scope", "in", scopes), where("status", "==", "pending")) : null), [scopes.join()]);
   const { data: mine } = useQueryData(() => query(collection(db, "requests"), where("requester.uid", "==", member.uid), orderBy("createdAt", "desc"), limit(5)), [member.uid]);
   const live = events.filter((e) => eventPhase(e) !== "past");
@@ -29,7 +28,7 @@ export default function OverviewPage() {
       <Stat label="Current & upcoming events" value={live.length} icon={CalendarDays} hint={`${events.length - live.length} past`} />
       <Stat label="Active members" value={members.length} icon={Users} hint="Across 5 teams" />
       <Stat label="Online teams (live events)" value={live.reduce((s, e) => s + (e.onlineCount || 0), 0)} icon={Table2} hint="Pending + confirmed" />
-      <Stat label="Requests awaiting you" value={pending.length} icon={ShieldCheck} hint={scopes.length ? "Form / poster permissions" : "You're not an approver"} />
+      <Stat label="Requests awaiting you" value={pending.length} icon={ShieldCheck} hint={scopes.length ? "Form permissions" : "You're not an approver"} />
     </div>
     <div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]">
       <Card><CardHeader><div><CardTitle>Events</CardTitle><CardDescription>Registration status at a glance.</CardDescription></div><Link to="/dashboard/events" className="text-[13px] font-semibold text-brand-bright">Manage →</Link></CardHeader>
@@ -41,11 +40,11 @@ export default function OverviewPage() {
         </CardContent></Card>
       <div className="space-y-5">
         <Card><CardHeader><CardTitle>Quick actions</CardTitle></CardHeader><CardContent className="grid gap-2">
-          {[["/dashboard/forms/new", FileText, "Create an event form"], ["/dashboard/posters", ImageIcon, "Make an Instagram / LinkedIn poster"], ["/dashboard/registrations", Table2, "See registrations"]].map(([to, I, l]) =>
+          {[["/dashboard/forms/new", FileText, "Create an event form"], ["/dashboard/media", ImageIcon, "Create a poster or video"], ["/dashboard/registrations", Table2, "See registrations"]].map(([to, I, l]) =>
             <Link key={to} to={to} className="flex items-center gap-3 rounded-xl bg-surface-2 p-3 text-sm font-semibold hover:text-brand-bright"><I size={17} className="text-brand-bright" />{l}<ArrowRight size={15} className="ml-auto" /></Link>)}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>My permission requests</CardTitle></CardHeader><CardContent className="space-y-2">
-          {mine.map((r) => <Link to={r.scope === "poster" ? "/dashboard/posters" : "/dashboard/forms"} key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2.5 text-sm"><span className="truncate">{r.scope === "poster" ? "Poster" : "Form"} · {r.eventName || "—"} <span className="text-muted">· {timeAgo(r.createdAt)}</span></span><Badge variant={{ pending: "warn", allowed: "ok", denied: "default", used: "muted" }[r.status]}>{r.status}</Badge></Link>)}
+          {mine.map((r) => <Link to="/dashboard/forms" key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2.5 text-sm"><span className="truncate">Form · {r.eventName || "—"} <span className="text-muted">· {timeAgo(r.createdAt)}</span></span><Badge variant={{ pending: "warn", allowed: "ok", denied: "default", used: "muted" }[r.status]}>{r.status}</Badge></Link>)}
           {!mine.length && <p className="text-sm text-muted">None yet.</p>}
         </CardContent></Card>
       </div>

@@ -15,6 +15,8 @@ const people = [
   ["dedeepya", "Dedeepya Kolli", "lead", "media", "Team Lead", "3rd Year"],
   ["rohini", "Rohini B", "member", "technical", "Team Member", "2nd Year"],
   ["anand", "Anand Patil", "member", "technical", "Team Member", "1st Year"],
+  ["meera", "Meera Nair", "member", "documentation", "Team Member", "2nd Year"],
+  ["arjun", "Arjun Rao", "member", "media", "Team Member", "2nd Year"],
 ];
 const uids = {};
 for (const [id, name, role, team, designation, year] of people) {
@@ -36,6 +38,10 @@ for (const [teamName, status, expiresAt, payment] of regs) {
 }
 await db.collection("events/mock-parliament-26/messages").add({ type: "payment", regId: "mock-parliament-26_p1", teamName: "Opposition Bench", amount: 200, utr: "412345678901", text: "Paid via GPay", sender: { uid: "p1", name: "Leader 1", kind: "participant", teamName: "Opposition Bench" }, createdAt: FieldValue.serverTimestamp() });
 await db.doc("requests/rqA").set({ id: "rqA", scope: "form", status: "pending", reason: "Feedback form for Mock Parliament judges", eventId: "mock-parliament-26", eventName: "Mock Parliament '26", requester: snap("rohini"), approvals: [], createdAt: FieldValue.serverTimestamp() });
+await db.doc("forms/fb1").set({ id: "fb1", eventId: "mock-parliament-26", eventName: "Mock Parliament '26", title: "Delegate preferences", description: "", fields: [{ id: "q1", type: "text", label: "Preferred ministry" }], status: "in_use", via: "admin", createdBy: snap("jiya"), createdAt: FieldValue.serverTimestamp(), responses: 2 });
+for (const k of [1, 2]) await db.collection("formResponses").add({ formId: "fb1", eventId: "mock-parliament-26", answers: { q1: k === 1 ? "Finance" : "External Affairs" }, uid: null, submittedAt: FieldValue.serverTimestamp() });
+await db.collection("logs").add({ scope: "events", type: "event.create", actor: snap("kanishka"), target: { id: "mock-parliament-26", name: "Mock Parliament '26" }, details: {}, createdAt: FieldValue.serverTimestamp() });
+await db.collection("logs").add({ scope: "events", type: "event.update", actor: snap("sanskar"), target: { id: "mock-parliament-26", name: "Mock Parliament '26" }, details: {}, createdAt: FieldValue.serverTimestamp() });
 await db.doc("config/setup").set({ adminUid: uids.admin });
 console.log("seeded", Object.keys(uids).length, "members");
 process.exit(0);

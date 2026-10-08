@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { collection, query, where, orderBy, limit } from "firebase/firestore";
-import { Ban, Download, MessagesSquare, Pencil, PlayCircle, Table2, ExternalLink } from "lucide-react";
+import { Ban, Download, MessagesSquare, Pencil, PlayCircle, Table2, ExternalLink, Clapperboard, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
 import { DashHeader } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,13 +10,15 @@ import { Stat, PageLoader, EmptyState } from "@/components/common/Primitives";
 import { ActorCard } from "@/components/common/ActorCard";
 import { QRCard } from "@/components/common/QRCard";
 import { PredictionCards } from "@/components/events/PredictionCards";
+import { MediaGrid } from "@/components/media/MediaGrid";
+import { mediaForEvent } from "@/services/media";
 import { useAuth } from "@/context/AuthContext";
 import { useEvent } from "@/hooks/useData";
 import { useQueryData } from "@/hooks/useFirestore";
 import { eventPhase, registrationState, setEventDisabled } from "@/services/events";
 import { effectiveStatus, logExport } from "@/services/registrations";
 import { registrationsCsv } from "@/lib/exportRegistrations";
-import { canDisableEvent, canEditEvent, canExportRegistrations } from "@/lib/permissions";
+import { canDisableEvent, canEditEvent, canExportRegistrations, canCreateMedia, canUseDocs } from "@/lib/permissions";
 import { LOG_LABELS } from "@/services/logs";
 import { SITE_URL } from "@/lib/constants";
 import { db } from "@/lib/firebase";
@@ -29,6 +31,7 @@ export default function EventManagePage() {
   const { data: regs } = useQueryData(() => query(collection(db, "registrations"), where("eventId", "==", slug)), [slug]);
   const { data: logs } = useQueryData(() => (staff ? query(collection(db, "logs"), where("scope", "in", ["events", "registrations"]), where("target.id", "==", slug), orderBy("createdAt", "desc"), limit(20)) : null), [slug, staff]);
   const { data: exportLogs } = useQueryData(() => (staff ? query(collection(db, "logs"), where("scope", "==", "registrations"), where("type", "==", "registration.export"), where("target.id", "==", slug), orderBy("createdAt", "desc"), limit(10)) : null), [slug, staff]);
+  const { data: media } = useQueryData(() => mediaForEvent(slug), [slug]);
   if (loading) return <PageLoader />;
   if (!ev) return <EmptyState title="Event not found" />;
 
@@ -51,6 +54,7 @@ export default function EventManagePage() {
         {canEditEvent(me, ev) && <Button asChild variant="secondary"><Link to={`/dashboard/events/${ev.slug}/edit`}><Pencil /> Edit</Link></Button>}
         {staff && <Button asChild variant="secondary"><Link to={`/events/${ev.slug}/chat`}><MessagesSquare /> Chat</Link></Button>}
         <Button asChild variant="secondary"><Link to={`/dashboard/registrations/${ev.slug}`}><Table2 /> Registrations</Link></Button>
+        {canUseDocs(me) && <Button asChild variant="secondary"><Link to={`/dashboard/documentation/${ev.slug}`}><NotebookPen /> Documentation</Link></Button>}
         {canExportRegistrations(me) && <Button variant="secondary" onClick={exportCsv}><Download /> CSV</Button>}
         {canDisableEvent(me) && <Button variant={ev.status === "disabled" ? "success" : "danger"} onClick={toggle}>{ev.status === "disabled" ? <><PlayCircle /> Re-open</> : <><Ban /> Disable event</>}</Button>}
       </div>} />
@@ -73,5 +77,8 @@ export default function EventManagePage() {
           {logs.filter((l) => l.type !== "registration.export").map((l) => <div key={l.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-[12px]"><span><strong>{l.actor?.name}</strong> · {LOG_LABELS[l.type] || l.type}</span><Badge variant="muted">{fmtDateTime(l.createdAt)}</Badge></div>)}
         </CardContent></Card>
     </div>
+    <Card className="mt-6"><CardHeader><div><CardTitle>Posters &amp; videos</CardTitle><CardDescription>Saved from Canva, the Video Studio or uploads. Public ones show on the event page automatically.</CardDescription></div>
+      {canCreateMedia(me) && <Button asChild size="sm"><Link to={`/dashboard/media?event=${ev.slug}`}><Clapperboard /> Create in Media studio</Link></Button>}</CardHeader>
+      <CardContent><MediaGrid items={media} me={me} /></CardContent></Card>
   </>;
 }

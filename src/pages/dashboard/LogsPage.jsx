@@ -13,7 +13,7 @@ import { ActorCard } from "@/components/common/ActorCard";
 import { useAuth } from "@/context/AuthContext";
 import { useQueryData } from "@/hooks/useFirestore";
 import { LOG_LABELS } from "@/services/logs";
-import { canSeeFormLogs, canSeePosterLogs, isAdmin, isOB } from "@/lib/permissions";
+import { canSeeFormLogs, canSeeMediaLogs, isAdmin, isOB } from "@/lib/permissions";
 import { rankOf } from "@/lib/constants";
 import { db } from "@/lib/firebase";
 import { fmtDateTime } from "@/lib/utils";
@@ -25,7 +25,7 @@ export default function LogsPage() {
     rankOf(me.role) >= 40 && ["events", "Events"],
     rankOf(me.role) >= 40 && ["registrations", "Registrations & CSV"],
     canSeeFormLogs(me) && ["forms", "Form creation"],
-    canSeePosterLogs(me) && ["posters", "Poster studio"],
+    canSeeMediaLogs(me) && ["media", "Media & reports"],
   ].filter(Boolean);
   const [scope, setScope] = useState(scopes[0]?.[0]);
   const { data: logs, loading } = useQueryData(() => (scope ? query(collection(db, "logs"), where("scope", "==", scope), orderBy("createdAt", "desc"), limit(400)) : null), [scope]);

@@ -30,7 +30,11 @@ const RegistrationsPage = lazy(() => import("@/pages/dashboard/RegistrationsPage
 const FormsPage = lazy(() => import("@/pages/dashboard/FormsPage"));
 const FormEditorPage = lazy(() => import("@/pages/dashboard/FormEditorPage"));
 const FormResponsesPage = lazy(() => import("@/pages/dashboard/FormResponsesPage"));
-const PostersPage = lazy(() => import("@/pages/dashboard/PostersPage"));
+const MediaStudioPage = lazy(() => import("@/pages/dashboard/MediaStudioPage"));
+const CanvaReturnPage = lazy(() => import("@/pages/dashboard/CanvaReturnPage"));
+const VideoStudioPage = lazy(() => import("@/pages/dashboard/VideoStudioPage"));
+const DocsHomePage = lazy(() => import("@/pages/dashboard/DocsHomePage"));
+const DocsEventPage = lazy(() => import("@/pages/dashboard/DocsEventPage"));
 const ApprovalsPage = lazy(() => import("@/pages/dashboard/ApprovalsPage"));
 const LogsPage = lazy(() => import("@/pages/dashboard/LogsPage"));
 
@@ -77,7 +81,12 @@ export default function App() {
             <Route path="forms" element={<FormsPage />} />
             <Route path="forms/new" element={<FormEditorPage />} />
             <Route path="forms/:formId" element={<FormResponsesPage />} />
-            <Route path="posters" element={<PostersPage />} />
+            <Route path="media" element={<MediaStudioPage />} />
+            <Route path="media/canva-return" element={<CanvaReturnPage />} />
+            <Route path="media/video" element={<VideoStudioPage />} />
+            <Route path="posters" element={<Navigate to="/dashboard/media" replace />} />
+            <Route path="documentation" element={<DocsHomePage />} />
+            <Route path="documentation/:slug" element={<DocsEventPage />} />
             <Route path="approvals" element={<ApprovalsPage />} />
             <Route path="logs" element={<LogsPage />} />
           </Route>

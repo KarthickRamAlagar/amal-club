@@ -14,7 +14,7 @@ import { createRequest, checkCode } from "@/services/requests";
 import { db } from "@/lib/firebase";
 import { errMsg, timeAgo, countdown, toMillis } from "@/lib/utils";
 
-const WHO = { form: "Admin, a Club Representative or the Technical Team Lead", poster: "Admin, a Club Representative or the Media & Design Team Lead" };
+const WHO = { form: "Admin, a Club Representative or the Technical Team Lead" };
 
 /**
  * Request → approver allows (one-time code, 24h) or denies (with reason) → requester enters code.
@@ -75,7 +75,7 @@ export function RequestDecisionDialog({ request: r, onOpenChange }) {
     <div className="flex items-center gap-3">
       {r.status === "denied" ? <ShieldX className="text-brand-bright" size={30} /> : r.status === "pending" ? <Clock className="text-warn" size={30} /> : <ShieldCheck className="text-ok" size={30} />}
       <div><DialogTitle>{r.status === "denied" ? "Request denied" : r.status === "pending" ? "Waiting for a decision" : r.status === "used" ? "Permission used" : "Request allowed"}</DialogTitle>
-        <DialogDescription>{r.scope === "poster" ? "Poster creation" : "Form creation"} · {r.eventName || "General"}</DialogDescription></div>
+        <DialogDescription>Form creation · {r.eventName || "General"}</DialogDescription></div>
     </div>
     <div className="mt-4 rounded-xl bg-surface-2 p-3 text-sm"><div className="text-[11px] font-bold uppercase tracking-wider text-muted">Your reason</div>{r.reason}</div>
     {r.decidedBy && <ActorCard className="mt-4" actor={r.decidedBy} label={r.status === "denied" ? "Denied by" : "Allowed by"} at={r.decidedAt} />}

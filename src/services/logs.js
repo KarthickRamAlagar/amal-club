@@ -4,7 +4,7 @@ import { actorSnap } from "@/lib/permissions";
 
 /**
  * Adds a log entry into a batch. scope decides who can read it:
- * members | events | registrations | forms | posters
+ * members | events | registrations | forms | media
  */
 export function logInBatch(batch, { scope, type, actor, target = {}, details = {} }) {
   const ref = doc(collection(db, "logs"));
@@ -37,10 +37,13 @@ export const LOG_LABELS = {
   "form.request": "Requested form permission",
   "form.allow": "Allowed form request",
   "form.deny": "Denied form request",
-  "poster.create": "Created poster",
-  "poster.request": "Requested poster permission",
-  "poster.allow": "Allowed poster request",
-  "poster.deny": "Denied poster request",
+  "media.save": "Saved media to event",
+  "media.hide": "Hid media from event page",
+  "media.show": "Showed media on event page",
+  "media.remove": "Removed media",
+  "report.save": "Updated event report",
+  "diary.note": "Added a diary note",
+  "ai.diary": "Generated AI day summary",
   "ai.banner": "Generated AI banner",
   "ai.prediction": "Ran AI planning prediction",
 };
