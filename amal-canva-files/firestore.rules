@@ -1,0 +1,362 @@
+rules_version = '2';
+// AMAL Club — security rules. These are the real gatekeeper: the UI only hides buttons.
+// Roles: admin(100) > president(80) > vp = treasurer(70) > lead(40) > member(20). Participants = Google sign-in, no member doc.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────── helpers ─────────
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function email() { return request.auth.token.email.lower(); }
+    function doc_(p) { return path('/databases/' + database + '/documents/' + p); }
+    function mpath(u) { return /databases/$(database)/documents/members/$(u); }
+    function me() { return get(mpath(uid())).data; }
+    function isMember() { return signedIn() && exists(mpath(uid())) && me().status == 'active'; }
+    function ready() { return isMember() && me().onboarded == true; }
+    function rankOf(r) { return r == 'admin' ? 100 : r == 'president' ? 80 : (r == 'vp' || r == 'treasurer') ? 70 : r == 'lead' ? 40 : r == 'member' ? 20 : 0; }
+    function myRank() { return rankOf(me().role); }
+    function isAdmin() { return ready() && me().role == 'admin'; }
+    function isOB() { return ready() && me().role in ['president', 'vp', 'treasurer']; }
+    function isStaff() { return ready() && myRank() >= 40; }
+    function isTTL() { return ready() && me().role == 'lead' && me().team == 'technical'; }
+    function isMedia() { return ready() && me().team == 'media'; }
+    function isDocs() { return ready() && me().team == 'documentation'; }
+    function canMedia() { return isAdmin() || isOB() || (ready() && me().role == 'lead') || isMedia(); }
+    function canDocs() { return isAdmin() || isOB() || isDocs(); }
+    function canApprove(scope) { return scope == 'form' && (isAdmin() || isOB() || isTTL()); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function nowMs() { return request.time.toMillis(); }
+    function istDay() { return math.floor((nowMs() + 19800000) / 86400000); }
+    function istMidnight(startMs) { return math.floor((startMs + 19800000) / 86400000) * 86400000 - 19800000; }
+    // Online registration closes 11:50 PM IST the night before; on-spot until the end of the event day.
+    function onlineOpen(ev) { return ev.status == 'upcoming' && nowMs() < istMidnight(ev.startAt) - 600000; }
+    function onspotOpen(ev) { return ev.status == 'upcoming' && nowMs() < istMidnight(ev.startAt) + 86400000; }
+    function teams() { return ['event-management', 'media', 'technical', 'outreach', 'documentation']; }
+    function grantOk(code, scope) {
+      return signedIn()
+        && get(doc_('grantCodes/' + code)).data.requesterUid == uid()
+        && get(doc_('grantCodes/' + code)).data.scope == scope
+        && get(doc_('grantCodes/' + code)).data.used == false
+        && get(doc_('grantCodes/' + code)).data.revoked == false
+        && get(doc_('grantCodes/' + code)).data.expiresAt > nowMs()
+        && getAfter(doc_('grantCodes/' + code)).data.used == true;
+    }
+
+    // ───────── one-time setup of the first Faculty Admin ─────────
+    match /config/{id} {
+      allow get: if true;
+      allow create: if id == 'setup' && signedIn() && request.resource.data.adminUid == uid()
+        && getAfter(mpath(uid())).data.role == 'admin';
+      allow update, delete: if false;
+    }
+
+    // ───────── members (public card fields only) ─────────
+    match /members/{u} {
+      allow read: if resource.data.status == 'active' || isMember();
+      allow create: if signedIn() && u == uid()
+        && request.resource.data.uid == uid()
+        && request.resource.data.status == 'active'
+        && request.resource.data.onboarded == false
+        && (
+          // a) redeeming an invite (batched with marking the invite used)
+          ('inviteCode' in request.resource.data && request.resource.data.inviteCode is string
+            && get(doc_('invites/' + request.resource.data.inviteCode)).data.email == email()
+            && get(doc_('invites/' + request.resource.data.inviteCode)).data.used == false
+            && get(doc_('invites/' + request.resource.data.inviteCode)).data.expiresAt > nowMs()
+            && get(doc_('invites/' + request.resource.data.inviteCode)).data.role == request.resource.data.role
+            && get(doc_('invites/' + request.resource.data.inviteCode)).data.team == request.resource.data.team
+            && get(doc_('invites/' + request.resource.data.inviteCode)).data.designation == request.resource.data.designation
+            && request.resource.data.email == email()
+            && getAfter(doc_('invites/' + request.resource.data.inviteCode)).data.used == true)
+          ||
+          // b) first admin bootstrap (only while /config/setup does not exist)
+          (request.resource.data.role == 'admin' && !exists(doc_('config/setup'))
+            && getAfter(doc_('config/setup')).data.adminUid == uid())
+        );
+      allow update: if
+        // self: onboarding / profile fields only (never role, team, status)
+        (signedIn() && u == uid() && isMember()
+          && changed().hasOnly(['name', 'year', 'department', 'photoUrl', 'linkedin', 'bio', 'onboarded', 'onboardedAt', 'updatedAt'])
+          && request.resource.data.onboarded == true)
+        ||
+        // retain / release / restore: Admin for anyone, Club Reps for leads & members
+        (signedIn() && u != uid()
+          && changed().hasOnly(['status', 'releasedAt', 'releasedYear', 'releasedBy', 'retainedYear', 'restoredAt', 'restoredBy', 'updatedAt'])
+          && request.resource.data.status in ['active', 'released']
+          && (isAdmin() || (isOB() && resource.data.role in ['lead', 'member'])));
+      allow delete: if false;
+    }
+
+    match /memberPrivate/{u} {
+      allow read: if (signedIn() && u == uid()) || isAdmin() || isOB();
+      allow write: if signedIn() && u == uid() && isMember();
+    }
+
+    match /amalIds/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && id.matches('^[a-z0-9._-]{4,24}$')
+        && request.resource.data.uid == uid() && request.resource.data.email == email();
+      allow update, delete: if false;
+    }
+
+    // ───────── invites (Admin → Club Reps → Leads → Members) ─────────
+    match /invites/{code} {
+      allow get: if true; // code acts as the secret
+      allow list: if isAdmin() || isOB() || (isStaff() && resource.data.createdBy.uid == uid());
+      allow create: if isStaff()
+        && request.resource.data.code == code
+        && request.resource.data.createdBy.uid == uid()
+        && request.resource.data.used == false
+        && request.resource.data.expiresAt <= nowMs() + 8 * 86400000
+        && (
+          (isAdmin() && request.resource.data.role in ['president', 'vp', 'treasurer', 'lead', 'member'])
+          || (isOB() && request.resource.data.role in ['lead', 'member'])
+          || (me().role == 'lead' && request.resource.data.role == 'member' && request.resource.data.team == me().team)
+        )
+        && ((request.resource.data.role in ['lead', 'member']) ? (request.resource.data.team in teams()) : (request.resource.data.team == null));
+      allow update: if signedIn() && resource.data.used == false && resource.data.email == email()
+        && changed().hasOnly(['used', 'usedBy', 'usedAt'])
+        && request.resource.data.used == true && request.resource.data.usedBy == uid();
+      allow delete: if isAdmin();
+    }
+
+    // ───────── logs (append-only; visibility by scope) ─────────
+    match /logs/{id} {
+      allow create: if signedIn() && request.resource.data.actor.uid == uid() && request.resource.data.createdAt == request.time;
+      allow read: if (resource.data.scope in ['members', 'events', 'registrations'] && isStaff())
+        || (resource.data.scope == 'forms' && (isAdmin() || isOB() || isTTL()))
+        || (resource.data.scope in ['media', 'posters'] && (isAdmin() || isOB() || isMedia() || isDocs()))
+        // Documentation team sees the event history it writes reports about
+        || (resource.data.scope in ['events', 'registrations', 'forms', 'media'] && isDocs());
+      allow update, delete: if false;
+    }
+
+    match /yearReviews/{id} {
+      allow read: if isAdmin() || isOB();
+      allow create: if (isAdmin() || isOB()) && request.resource.data.actor.uid == uid()
+        && (request.resource.data.team != 'core' || isAdmin());
+      allow update, delete: if false;
+    }
+
+    // ───────── events ─────────
+    function regPath(slug) { return doc_('registrations/' + slug + '_' + uid()); }
+    match /events/{slug} {
+      allow read: if true;
+      allow create: if (isAdmin() || isOB())
+        && request.resource.data.slug == slug
+        && request.resource.data.createdBy.uid == uid()
+        && request.resource.data.createdBy.rank == myRank()
+        && request.resource.data.status == 'upcoming'
+        && request.resource.data.onlineCount == 0 && request.resource.data.onspotCount == 0
+        && request.resource.data.startAt is number
+        && !('prediction' in request.resource.data);
+      allow update: if
+        // edit: only equal or higher rank than the creator
+        ((isAdmin() || isOB()) && myRank() >= resource.data.createdBy.rank
+          && !changed().hasAny(['createdBy', 'createdAt', 'slug', 'onlineCount', 'onspotCount', 'prediction']))
+        // disable / re-open: Admin, Club Reps, Team Leads
+        || (isStaff() && changed().hasOnly(['status', 'disabledBy', 'disabledAt']) && request.resource.data.status in ['upcoming', 'disabled'])
+        // staff may only decrease counters (reject / 5h expiry)
+        || (isStaff() && changed().hasOnly(['onlineCount', 'onspotCount'])
+          && request.resource.data.onlineCount <= resource.data.onlineCount && request.resource.data.onspotCount <= resource.data.onspotCount)
+        // participant registering: +1 within intake, batched with their registration
+        || (signedIn() && changed().hasOnly(['onlineCount'])
+          && request.resource.data.onlineCount == resource.data.onlineCount + 1
+          && request.resource.data.onlineCount <= resource.data.onlineIntake
+          && !exists(regPath(slug)) && getAfter(regPath(slug)).data.mode == 'online')
+        || (signedIn() && changed().hasOnly(['onspotCount'])
+          && request.resource.data.onspotCount == resource.data.onspotCount + 1
+          && request.resource.data.onspotCount <= resource.data.onspotIntake
+          && !exists(regPath(slug)) && getAfter(regPath(slug)).data.mode == 'onspot');
+      allow delete: if isAdmin();
+
+      // WhatsApp-style chat: Admin, Club Reps, Team Leads + registered teams
+      match /messages/{mid} {
+        function myReg() { return get(regPath(slug)).data; }
+        function activeReg() { return exists(regPath(slug)) && myReg().status in ['pending_payment', 'confirmed']; }
+        allow read: if isStaff() || isDocs() || (signedIn() && exists(regPath(slug)));
+        allow create: if signedIn()
+          && request.resource.data.sender.uid == uid()
+          && request.resource.data.createdAt == request.time
+          && (
+            (isStaff() && request.resource.data.type in ['text', 'location', 'address', 'system'])
+            || (activeReg() && request.resource.data.type in ['text', 'payment', 'system']
+              && (request.resource.data.type == 'text' || request.resource.data.regId == slug + '_' + uid()))
+          );
+        allow update, delete: if false;
+      }
+
+      // Documentation diary: one note per person per entry, day = IST day number
+      match /diary/{nid} {
+        allow read: if ready();
+        allow create: if canDocs()
+          && request.resource.data.author.uid == uid()
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.day is number
+          && request.resource.data.text is string && request.resource.data.text.size() <= 4000;
+        allow delete: if canDocs() && (resource.data.author.uid == uid() || isAdmin() || isOB());
+        allow update: if false;
+      }
+    }
+
+    // ───────── registrations (doc id = eventSlug_uid) ─────────
+    match /registrations/{id} {
+      function ev() { return get(doc_('events/' + request.resource.data.eventId)).data; }
+      function evAfter() { return getAfter(doc_('events/' + request.resource.data.eventId)).data; }
+      allow read: if ready() || (signedIn() && resource.data.uid == uid());
+      allow create: if signedIn()
+        && id == request.resource.data.eventId + '_' + uid()
+        && request.resource.data.id == id
+        && request.resource.data.uid == uid()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.amount == ev().price
+        && request.resource.data.headcount == request.resource.data.members.size() + 1
+        && request.resource.data.headcount >= ev().teamMin && request.resource.data.headcount <= ev().teamMax
+        && (ev().price > 0
+          ? (request.resource.data.status == 'pending_payment' && request.resource.data.expiresAt <= nowMs() + 5 * 3600000 + 120000)
+          : request.resource.data.status == 'confirmed')
+        && (
+          (request.resource.data.mode == 'online' && onlineOpen(ev()) && evAfter().onlineCount == ev().onlineCount + 1)
+          || (request.resource.data.mode == 'onspot' && onspotOpen(ev()) && evAfter().onspotCount == ev().onspotCount + 1)
+        );
+      allow update: if
+        // team sends payment details
+        (signedIn() && resource.data.uid == uid() && resource.data.status == 'pending_payment' && changed().hasOnly(['payment']))
+        // staff confirm / reject / expire (tags team in chat)
+        || (isStaff() && changed().hasOnly(['status', 'decidedBy', 'decidedAt', 'decisionNote'])
+          && request.resource.data.status in ['confirmed', 'rejected', 'expired']);
+      allow delete: if false;
+    }
+
+    match /participants/{u} {
+      allow read: if (signedIn() && u == uid()) || isStaff();
+      allow write: if signedIn() && u == uid();
+    }
+
+    // ───────── permission requests & one-time codes ─────────
+    match /requests/{id} {
+      allow read: if (signedIn() && resource.data.requester.uid == uid()) || canApprove(resource.data.scope);
+      allow create: if ready() && request.resource.data.id == id
+        && request.resource.data.requester.uid == uid()
+        && request.resource.data.scope == 'form'
+        && request.resource.data.status == 'pending';
+      allow update: if
+        (canApprove(resource.data.scope) && resource.data.status in ['pending', 'allowed']
+          && changed().hasOnly(['status', 'decidedBy', 'decidedAt', 'activeCode', 'codeExpiresAt', 'approvals', 'decisionReason'])
+          && request.resource.data.status in ['allowed', 'denied']
+          && (!changed().hasAny(['decidedBy']) || request.resource.data.decidedBy.uid == uid()))
+        || (signedIn() && resource.data.requester.uid == uid() && resource.data.status == 'allowed'
+          && changed().hasOnly(['status', 'usedAt', 'formId']) && request.resource.data.status == 'used');
+      allow delete: if false;
+    }
+
+    match /grantCodes/{code} {
+      allow get: if signedIn();
+      allow list: if isAdmin() || isOB() || isTTL();
+      allow create: if canApprove(request.resource.data.scope)
+        && request.resource.data.code == code
+        && request.resource.data.issuedBy.uid == uid()
+        && request.resource.data.used == false && request.resource.data.revoked == false
+        && request.resource.data.expiresAt <= nowMs() + 86400000 + 120000
+        && (isAdmin() ? code.matches('^ADMIN-AMAL-[0-9]{4}$')
+          : isOB() ? code.matches('^OB-AMAL-[0-9]{6}$')
+          : code.matches('^TTL-AMAL-[0-9]{4}$'));
+      allow update: if
+        (canApprove(resource.data.scope) && changed().hasOnly(['revoked']) && request.resource.data.revoked == true)
+        || (signedIn() && resource.data.requesterUid == uid() && resource.data.used == false && resource.data.revoked == false
+          && resource.data.expiresAt > nowMs()
+          && changed().hasOnly(['used', 'usedBy', 'usedAt', 'formId'])
+          && request.resource.data.used == true && request.resource.data.usedBy == uid());
+      allow delete: if false;
+    }
+
+    // ───────── form creation (3/day for Club Reps & Technical Lead; code for everyone else) ─────────
+    match /formQuota/{u} {
+      allow read: if signedIn() && u == uid();
+      allow create, update: if signedIn() && u == uid()
+        && request.resource.data.day == istDay()
+        && request.resource.data.count <= 3
+        && ((resource == null || resource.data.day != istDay())
+          ? request.resource.data.count == 1
+          : request.resource.data.count == resource.data.count + 1);
+    }
+
+    match /forms/{fid} {
+      function q() { return doc_('formQuota/' + uid()); }
+      allow read: if true; // public form page
+      allow create: if ready()
+        && request.resource.data.createdBy.uid == uid()
+        && request.resource.data.status == 'in_use'
+        && request.resource.data.createdAt == request.time
+        && get(doc_('events/' + request.resource.data.eventId)).data.status == 'upcoming'
+        && (
+          (isAdmin() && request.resource.data.via == 'admin')
+          || ((isOB() || isTTL()) && request.resource.data.via == 'quota'
+            && getAfter(q()).data.day == istDay()
+            && (!exists(q()) || get(q()).data.day != istDay() || get(q()).data.count != getAfter(q()).data.count))
+          || (request.resource.data.via == 'code' && grantOk(request.resource.data.grant.code, 'form'))
+        );
+      allow update: if isStaff() && changed().hasOnly(['status', 'completedAt']) && request.resource.data.status == 'completed';
+      allow delete: if isAdmin();
+    }
+
+    match /formResponses/{rid} {
+      function form() { return get(doc_('forms/' + request.resource.data.formId)).data; }
+      allow create: if request.resource.data.keys().hasOnly(['formId', 'eventId', 'answers', 'uid', 'submittedAt'])
+        && form().status == 'in_use'
+        && request.resource.data.eventId == form().eventId
+        && get(doc_('events/' + form().eventId)).data.status == 'upcoming'
+        && request.resource.data.submittedAt == request.time
+        && (request.resource.data.uid == null || (signedIn() && request.resource.data.uid == uid()));
+      allow read: if ready();
+      allow update, delete: if false;
+    }
+
+    // ───────── event media (Canva posters & videos, Video Studio, uploads) ─────────
+    // Only the Cloudinary URL + metadata live here; the editable design stays in the member's Canva.
+    match /media/{mid} {
+      allow read: if (resource.data.visibility == 'public' && resource.data.status == 'active') || ready();
+      allow create: if canMedia()
+        && request.resource.data.id == mid
+        && request.resource.data.createdBy.uid == uid()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.status == 'active'
+        && request.resource.data.kind in ['poster', 'video']
+        && request.resource.data.source in ['canva', 'studio', 'upload']
+        && request.resource.data.visibility in ['public', 'internal']
+        && request.resource.data.url is string && request.resource.data.url.matches('^https://res[.]cloudinary[.]com/.*')
+        && exists(doc_('events/' + request.resource.data.eventId));
+      allow update: if (canMedia() && (resource.data.createdBy.uid == uid() || isAdmin() || isOB() || (ready() && me().role == 'lead')))
+        && changed().hasOnly(['visibility', 'status', 'title', 'updatedBy', 'updatedAt'])
+        && request.resource.data.visibility in ['public', 'internal'] && request.resource.data.status in ['active', 'removed'];
+      allow delete: if false;
+    }
+
+    // ───────── event reports (Documentation team) ─────────
+    match /reports/{slug} {
+      allow read: if ready();
+      allow create, update: if canDocs()
+        && request.resource.data.eventId == slug
+        && exists(doc_('events/' + slug))
+        && request.resource.data.updatedBy.uid == uid()
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.html is string && request.resource.data.html.size() < 900000;
+      allow delete: if isAdmin();
+    }
+
+    // Canva OAuth state + tokens: written and read only by the Vercel API (Admin SDK)
+    match /canvaStates/{id} { allow read, write: if false; }
+    match /canvaTokens/{u} { allow read, write: if false; }
+    // what AMAL sent into each member's Canva (written by the API; the member can see their own list)
+    match /canvaAssets/{id} { allow read: if signedIn() && resource.data.uid == uid(); allow write: if false; }
+
+    // server-only (AI quotas are written by the Vercel API with the Admin SDK)
+    match /aiQuota/{u} {
+      allow read: if signedIn() && u == uid();
+      allow write: if false;
+    }
+
+    match /{document=**} { allow read, write: if false; }
+  }
+}
